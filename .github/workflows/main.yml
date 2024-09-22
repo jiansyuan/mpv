@@ -108,10 +108,9 @@ jobs:
           cat ./build/meson-logs/testlog.txt
 
       # 打包构建目录
-      - name: Zip build directory
+      - name: Zip build directory with PowerShell
         run: |
-          cd D:/a/mpv/mpv
-          zip -r build.zip build
+          Compress-Archive -Path 'D:/a/mpv/mpv/build/*' -DestinationPath 'D:/a/mpv/mpv/build.zip'
 
       # 自动发布 Release
       - name: Create GitHub Release
