@@ -113,6 +113,10 @@ jobs:
           cd /d/a/mpv/mpv
           tar -czvf build.tar.gz build
 
+      # 获取当前时间作为 Tag 名称
+      - name: Set Release Tag
+        run: echo "TAG_NAME=v$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+
       # 自动发布 Release
       - name: Create GitHub Release
         id: create_release
@@ -120,8 +124,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.sha }}
-          release_name: Release ${{ github.sha }}
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: Release ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
 
@@ -135,4 +139,5 @@ jobs:
           asset_path: /d/a/mpv/mpv/build.tar.gz
           asset_name: build-${{ matrix.sys }}.tar.gz
           asset_content_type: application/gzip
+
 
