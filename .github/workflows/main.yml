@@ -1,4 +1,37 @@
-msys2:
+
+name: build
+
+on:
+  push:
+    branches:
+      - master
+      - ci
+      - 'release/**'
+    paths-ignore:
+      - 'DOCS/**'
+      - 'TOOLS/lua/**'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE'
+      - '.gitignore'
+      - 'Copyright'
+      - 'README.md'
+      - 'RELEASE_NOTES'
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - 'DOCS/**'
+      - 'TOOLS/lua/**'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE'
+      - '.gitignore'
+      - 'Copyright'
+      - 'README.md'
+      - 'RELEASE_NOTES'
+
+jobs:
+  msys2:
   runs-on: windows-latest
   strategy:
     fail-fast: false
@@ -102,3 +135,4 @@ msys2:
         asset_path: /d/a/mpv/mpv/build.tar.gz
         asset_name: build-${{ matrix.sys }}.tar.gz
         asset_content_type: application/gzip
+
