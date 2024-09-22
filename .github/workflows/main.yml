@@ -79,6 +79,7 @@ jobs:
             uchardet:p
             vapoursynth:p
             vulkan-devel:p
+            zip:p
 
       - name: Install dependencies
         if: ${{ matrix.sys != 'clang32' && matrix.sys != 'mingw32' }}
@@ -107,10 +108,11 @@ jobs:
         run: |
           cat ./build/meson-logs/testlog.txt
 
-      # 打包构建目录
-      - name: Zip build directory with PowerShell
+      # 打包构建目录    
+      - name: Zip build directory
         run: |
-          Compress-Archive -Path 'D:/a/mpv/mpv/build/*' -DestinationPath 'D:/a/mpv/mpv/build.zip'
+          cd D:/a/mpv/mpv
+          zip -r build.zip build
 
       # 自动发布 Release
       - name: Create GitHub Release
