@@ -37,11 +37,11 @@ jobs:
       fail-fast: false
       matrix:
         sys:
-          - clang32
+ #         - clang32
           - clang64
-          - mingw32
-          - mingw64
-          - ucrt64
+ #         - mingw32
+ #         - mingw64
+  #        - ucrt64
     defaults:
       run:
         shell: msys2 {0}
@@ -112,6 +112,10 @@ jobs:
         run: |
           tar -czvf build.tar.gz -C build .
 
+      # 获取当前时间作为 Tag 名称
+      - name: Set Release Tag
+        run: echo "TAG_NAME=v$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+
       # 自动发布 Release
       - name: Create GitHub Release
         id: create_release
@@ -119,8 +123,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v1.0.0  # 或自动生成的版本号
-          release_name: Release v1.0.0
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: Release ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
 
