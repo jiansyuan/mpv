@@ -37,11 +37,11 @@ jobs:
       fail-fast: false
       matrix:
         sys:
- #         - clang32
+          - clang32
           - clang64
- #         - mingw32
- #         - mingw64
-  #        - ucrt64
+          - mingw32
+          - mingw64
+          - ucrt64
     defaults:
       run:
         shell: msys2 {0}
@@ -110,12 +110,16 @@ jobs:
       # 打包构建目录为 tar.gz
       - name: Tar build directory
         run: |
-          tar -czvf build.tar.gz -C build .
-
+          tar -czvf build-${{ matrix.sys }}.tar.gz -C build .
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-${{ matrix.sys }}
+          path: build-${{ matrix.sys }}.tar.gz
       # 获取当前时间作为 Tag 名称
       - name: Set Release Tag
         run: echo "TAG_NAME=v$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
-
+      
       # 自动发布 Release
       - name: Create GitHub Release
         id: create_release
@@ -135,7 +139,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build.tar.gz  # 使用相对路径
+          asset_path: ./build-${{ matrix.sys }}.tar.gz  # 使用相对路径
           asset_name: build-${{ matrix.sys }}.tar.gz
           asset_content_type: application/gzip
 
