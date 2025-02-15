@@ -1,4 +1,3 @@
-
 name: build
 
 on:
@@ -112,13 +111,13 @@ jobs:
         run: |
           tar -czvf build-${{ matrix.sys }}.tar.gz -C build .
       - name: Upload build artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.sys }}
           path: build-${{ matrix.sys }}.tar.gz
       # 获取当前时间作为 Tag 名称
       - name: Set Release Tag
-        run: echo "TAG_NAME=v$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+        run: echo "TAG_NAME=v$(date +'%Y%m%d')" >> $GITHUB_ENV
       
       # 自动发布 Release
       - name: Create GitHub Release
@@ -142,7 +141,3 @@ jobs:
           asset_path: ./build-${{ matrix.sys }}.tar.gz  # 使用相对路径
           asset_name: build-${{ matrix.sys }}.tar.gz
           asset_content_type: application/gzip
-
-
-
-    
