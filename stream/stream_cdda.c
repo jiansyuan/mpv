@@ -23,16 +23,12 @@
 
 #include <cdio/cdio.h>
 
-// For cdio_cddap_version
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-prototypes"
 #ifndef TESTING_IS_FINISHED
 // Suppress Wundef warning
 #define TESTING_IS_FINISHED 0
 #endif
 #include <cdio/paranoia/cdda.h>
 #include <cdio/paranoia/paranoia.h>
-#pragma GCC diagnostic pop
 
 #include "common/msg.h"
 #include "config.h"
@@ -42,6 +38,7 @@
 #include "options/m_option.h"
 #include "options/m_config.h"
 #include "options/options.h"
+#include "options/path.h"
 
 #if !HAVE_GPL
 #error GPL only
@@ -255,11 +252,11 @@ static int open_cdda(stream_t *st)
     int last_track;
 
     if (st->path[0]) {
-        p->device = st->path;
+        p->device = talloc_strdup(priv, st->path);
     } else if (p->cdda_device && p->cdda_device[0]) {
-        p->device = p->cdda_device;
+        p->device = mp_get_user_path(priv, st->global, p->cdda_device);
     } else {
-        p->device = DEFAULT_CDROM_DEVICE;
+        p->device = talloc_strdup(priv, DEFAULT_CDROM_DEVICE);
     }
 
 #if defined(__NetBSD__)
@@ -315,7 +312,6 @@ static int open_cdda(stream_t *st)
     priv->cdp = paranoia_init(cdd);
     if (priv->cdp == NULL) {
         cdda_close(cdd);
-        free(priv);
         return STREAM_ERROR;
     }
 

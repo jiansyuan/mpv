@@ -42,6 +42,7 @@
 #include "common/common.h"
 #include "common/msg.h"
 #include "options/m_config.h"
+#include "options/options.h"
 #include "options/path.h"
 #include "stream.h"
 #include "osdep/timer.h"
@@ -265,6 +266,26 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
         bd_seamless_angle_change(b->bd, angle);
         return STREAM_OK;
     }
+    case STREAM_CTRL_GET_TITLE_LENGTH: {
+        int title = *(double *)arg;
+        if (!b->bd || title < 0 || title >= b->num_titles)
+            return STREAM_UNSUPPORTED;
+        const BLURAY_TITLE_INFO *ti = bd_get_title_info(b->bd, title, 0);
+        if (!ti)
+            return STREAM_UNSUPPORTED;
+        *(double *)arg = BD_TIME_TO_MP(ti->duration);
+        return STREAM_OK;
+    }
+    case STREAM_CTRL_GET_TITLE_PLAYLIST: {
+        int title = *(double *)arg;
+        if (!b->bd || title < 0 || title >= b->num_titles)
+            return STREAM_UNSUPPORTED;
+        const BLURAY_TITLE_INFO *ti = bd_get_title_info(b->bd, title, 0);
+        if (!ti)
+            return STREAM_UNSUPPORTED;
+        *(double *)arg = ti->playlist;
+        return STREAM_OK;
+    }
     case STREAM_CTRL_GET_LANG: {
         const BLURAY_TITLE_INFO *ti = b->title_info;
         if (ti && ti->clip_count) {
@@ -404,7 +425,9 @@ static int bluray_stream_open_internal(stream_t *s)
         bd_set_debug_mask(0);
 
     /* open device */
-    BLURAY *bd = bd_open(device, NULL);
+    char *device_tmp = mp_get_user_path(NULL, s->global, device);
+    BLURAY *bd = bd_open(device_tmp, NULL);
+    talloc_free(device_tmp);
     if (!bd) {
         MP_ERR(s, "Couldn't open Blu-ray device: %s\n", device);
         return STREAM_UNSUPPORTED;
@@ -493,7 +516,13 @@ static int bluray_stream_open(stream_t *s)
 
     b->cfg_title = BLURAY_DEFAULT_TITLE;
 
-    if (bstr_equals0(title, "longest") || bstr_equals0(title, "first")) {
+    struct MPOpts *opts = mp_get_config_group(s, s->global, &mp_opt_root);
+    int edition_id = opts->edition_id;
+    talloc_free(opts);
+
+    if (edition_id >= 0) {
+        b->cfg_title = edition_id;
+    } else if (bstr_equals0(title, "longest") || bstr_equals0(title, "first")) {
         b->cfg_title = BLURAY_DEFAULT_TITLE;
     } else if (bstr_equals0(title, "menu")) {
         b->cfg_title = BLURAY_MENU_TITLE;

@@ -31,6 +31,7 @@
 #include "options/m_config.h"
 #include "options/m_option.h"
 #include "options/options.h"
+#include "options/path.h"
 #include "osdep/timer.h"
 #include "video/out/vo.h"
 #include "mpv_talloc.h"
@@ -76,7 +77,7 @@ struct mux_stream {
 #define OPT_BASE_STRUCT struct encode_opts
 const struct m_sub_options encode_config = {
     .opts = (const m_option_t[]) {
-        {"o", OPT_STRING(file), .flags = CONF_NOCFG | CONF_PRE_PARSE | M_OPT_FILE},
+        {"o", OPT_STRING(file), .flags = M_OPT_NOCFG | M_OPT_PRE_PARSE | M_OPT_FILE},
         {"of", OPT_STRING(format)},
         {"ofopts", OPT_KEYVALUELIST(fopts), .flags = M_OPT_HAVE_HELP},
         {"ovc", OPT_STRING(vcodec)},
@@ -135,7 +136,9 @@ struct encode_lavc_context *encode_lavc_init(struct mpv_global *global)
 
     p->muxer->oformat = ctx->oformat;
 
-    p->muxer->url = av_strdup(filename);
+    char *path = mp_get_user_path(NULL, global, filename);
+    p->muxer->url = av_strdup(path);
+    talloc_free(path);
     MP_HANDLE_OOM(p->muxer->url);
 
     return ctx;
@@ -372,7 +375,7 @@ static void encode_lavc_add_stream(struct encoder_context *enc,
         dst->st->sample_aspect_ratio = info->codecpar->sample_aspect_ratio;
 
     if (avcodec_parameters_copy(dst->st->codecpar, info->codecpar) < 0)
-        MP_HANDLE_OOM(0);
+        MP_HANDLE_OOM(NULL);
 
     dst->on_ready = on_ready;
     dst->on_ready_ctx = on_ready_ctx;
@@ -546,7 +549,7 @@ bool encode_lavc_showhelp(struct mp_log *log, struct encode_opts *opts)
         encode_lavc_printoptions(log, c, "  --ofopts=", "           ", NULL,
                                  AV_OPT_FLAG_ENCODING_PARAM,
                                  AV_OPT_FLAG_ENCODING_PARAM);
-        av_free(c);
+        avformat_free_context(c);
         void *iter = NULL;
         while ((format = av_muxer_iterate(&iter))) {
             if (format->priv_class) {

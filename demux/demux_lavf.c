@@ -55,13 +55,6 @@
 #include "options/m_option.h"
 #include "options/path.h"
 
-#ifndef AV_DISPOSITION_TIMED_THUMBNAILS
-#define AV_DISPOSITION_TIMED_THUMBNAILS 0
-#endif
-#ifndef AV_DISPOSITION_STILL_IMAGE
-#define AV_DISPOSITION_STILL_IMAGE 0
-#endif
-
 #define INITIAL_PROBE_SIZE STREAM_BUFFER_SIZE
 #define PROBE_BUF_SIZE (10 * 1024 * 1024)
 
@@ -128,6 +121,7 @@ const struct m_sub_options demux_lavf_conf = {
         .linearize_ts = -1,
         .propagate_opts = true,
     },
+    .change_flags = UPDATE_DEMUXER,
 };
 
 struct format_hack {
@@ -444,7 +438,7 @@ static int lavf_check_file(demuxer_t *demuxer, enum demux_check check)
 
     const AVInputFormat *forced_format = NULL;
     const char *format = lavfdopts->format;
-    if (!format)
+    if (!format || !format[0])
         format = s->lavf_type;
     if (!format)
         format = avdevice_format;
@@ -600,51 +594,57 @@ static void select_tracks(struct demuxer *demuxer, int start)
     }
 }
 
+static inline const uint8_t *mp_av_stream_get_side_data(const AVStream *st,
+                                                        enum AVPacketSideDataType type)
+{
+    const AVPacketSideData *sd;
+    sd = av_packet_side_data_get(st->codecpar->coded_side_data,
+                                 st->codecpar->nb_coded_side_data,
+                                 type);
+    return sd ? sd->data : NULL;
+}
+
 static void export_replaygain(demuxer_t *demuxer, struct sh_stream *sh,
                               AVStream *st)
 {
-    AVPacketSideData *side_data = st->codecpar->coded_side_data;
-    int nb_side_data = st->codecpar->nb_coded_side_data;
-    for (int i = 0; i < nb_side_data; i++) {
-        AVReplayGain *av_rgain;
-        struct replaygain_data *rgain;
-        AVPacketSideData *src_sd = &side_data[i];
+    const AVReplayGain *av_rgain =
+        (const AVReplayGain *)mp_av_stream_get_side_data(st, AV_PKT_DATA_REPLAYGAIN);
+    if (!av_rgain)
+        return;
 
-        if (src_sd->type != AV_PKT_DATA_REPLAYGAIN)
-            continue;
+    bool track_data_available =
+        av_rgain->track_gain != INT32_MIN && av_rgain->track_peak != 0;
+    bool album_data_available =
+        av_rgain->album_gain != INT32_MIN && av_rgain->album_peak != 0;
 
-        av_rgain = (AVReplayGain*)src_sd->data;
-        rgain    = talloc_ptrtype(demuxer, rgain);
-        rgain->track_gain = rgain->album_gain = 0;
-        rgain->track_peak = rgain->album_peak = 1;
+    if (!track_data_available && !album_data_available)
+        return;
 
-        // Set values in *rgain, using track gain as a fallback for album gain
-        // if the latter is not present. This behavior matches that in
-        // demux/demux.c's decode_rgain; if you change this, please make
-        // equivalent changes there too.
-        if (av_rgain->track_gain != INT32_MIN && av_rgain->track_peak != 0.0) {
-            // Track gain is defined.
-            rgain->track_gain = av_rgain->track_gain / 100000.0f;
-            rgain->track_peak = av_rgain->track_peak / 100000.0f;
+    struct replaygain_data *rgain = talloc_ptrtype(demuxer, rgain);
+    rgain->track_gain = rgain->album_gain = 0;
+    rgain->track_peak = rgain->album_peak = 1;
 
-            if (av_rgain->album_gain != INT32_MIN &&
-                av_rgain->album_peak != 0.0)
-            {
-                // Album gain is also defined.
-                rgain->album_gain = av_rgain->album_gain / 100000.0f;
-                rgain->album_peak = av_rgain->album_peak / 100000.0f;
-            } else {
-                // Album gain is undefined; fall back to track gain.
-                rgain->album_gain = rgain->track_gain;
-                rgain->album_peak = rgain->track_peak;
-            }
-        }
-
-        // This must be run only before the stream was added, otherwise there
-        // will be race conditions with accesses from the user thread.
-        assert(!sh->ds);
-        sh->codec->replaygain_data = rgain;
+    // Set values in *rgain, using track gain as a fallback for album gain
+    // if the latter is not present. This behavior matches that in
+    // demux/demux.c's decode_rgain; if you change this, please make
+    // equivalent changes there too.
+    if (track_data_available) {
+        rgain->track_gain = rgain->album_gain =
+            av_rgain->track_gain / 100000.0f;
+        rgain->track_peak = rgain->album_peak =
+            av_rgain->track_peak / 100000.0f;
     }
+
+    // If album data is actually available, fill it in with proper values.
+    if (album_data_available) {
+        rgain->album_gain = av_rgain->album_gain / 100000.0f;
+        rgain->album_peak = av_rgain->album_peak / 100000.0f;
+    }
+
+    // This must be run only before the stream was added, otherwise there
+    // will be race conditions with accesses from the user thread.
+    assert(!sh->ds);
+    sh->codec->replaygain_data = rgain;
 }
 
 // Return a dictionary entry as (decimal) integer.
@@ -669,18 +669,10 @@ static bool is_image(AVStream *st, bool attached_picture, const AVInputFormat *a
         strcmp(avif->name, "gif") == 0 ||
         strcmp(avif->name, "ico") == 0 ||
         strcmp(avif->name, "image2pipe") == 0 ||
-        (st->codecpar->codec_id == AV_CODEC_ID_AV1 && st->nb_frames == 1)
+        ((st->codecpar->codec_id == AV_CODEC_ID_HEVC ||
+          st->codecpar->codec_id == AV_CODEC_ID_AV1)
+         && st->nb_frames == 1)
     );
-}
-
-static inline const uint8_t *mp_av_stream_get_side_data(const AVStream *st,
-                                                        enum AVPacketSideDataType type)
-{
-    const AVPacketSideData *sd;
-    sd = av_packet_side_data_get(st->codecpar->coded_side_data,
-                                 st->codecpar->nb_coded_side_data,
-                                 type);
-    return sd ? sd->data : NULL;
 }
 
 static void handle_new_stream(demuxer_t *demuxer, int i)
@@ -726,7 +718,7 @@ static void handle_new_stream(demuxer_t *demuxer, int i)
             !(st->disposition & AV_DISPOSITION_TIMED_THUMBNAILS))
         {
             sh->attached_picture =
-                new_demux_packet_from_avpacket(&st->attached_pic);
+                new_demux_packet_from_avpacket(demuxer->packet_pool, &st->attached_pic);
             if (sh->attached_picture) {
                 sh->attached_picture->pts = 0;
                 talloc_steal(sh, sh->attached_picture);
@@ -767,7 +759,6 @@ static void handle_new_stream(demuxer_t *demuxer, int i)
             const AVDOVIDecoderConfigurationRecord *cfg = (void *) sd;
             MP_VERBOSE(demuxer, "Found Dolby Vision config record: profile "
                        "%d level %d\n", cfg->dv_profile, cfg->dv_level);
-            av_format_inject_global_side_data(avfc);
             sh->codec->dovi = true;
             sh->codec->dv_profile = cfg->dv_profile;
             sh->codec->dv_level = cfg->dv_level;
@@ -1231,7 +1222,7 @@ static bool demux_lavf_read_packet(struct demuxer *demux,
         return true;
     }
 
-    struct demux_packet *dp = new_demux_packet_from_avpacket(pkt);
+    struct demux_packet *dp = new_demux_packet_from_avpacket(demux->packet_pool, pkt);
     if (!dp) {
         av_packet_unref(pkt);
         return true;

@@ -72,6 +72,27 @@ struct priv {
     struct dvd_opts *opts;
 };
 
+struct dvd_opts {
+    int angle;
+    int speed;
+    char *device;
+};
+
+#define OPT_BASE_STRUCT struct dvd_opts
+
+const struct m_sub_options dvd_conf = {
+    .opts = (const struct m_option[]){
+        {"device", OPT_STRING(device), .flags = M_OPT_FILE},
+        {"speed", OPT_INT(speed)},
+        {"angle", OPT_INT(angle), M_RANGE(1, 99)},
+        {0}
+    },
+    .size = sizeof(struct dvd_opts),
+    .defaults = &(const struct dvd_opts){
+        .angle = 1,
+    },
+};
+
 #define DNE(e) [e] = # e
 static const char *const mp_dvdnav_events[] = {
     DNE(DVDNAV_BLOCK_OK),
@@ -521,7 +542,7 @@ static void stream_dvdnav_close(stream_t *s)
     if (priv->dvd_speed)
         dvd_set_speed(s, priv->filename, -1);
     if (priv->filename)
-        free(priv->filename);
+        talloc_free(priv->filename);
 }
 
 static struct priv *new_dvdnav_stream(stream_t *stream, char *filename)
@@ -532,14 +553,14 @@ static struct priv *new_dvdnav_stream(stream_t *stream, char *filename)
     if (!filename)
         return NULL;
 
-    if (!(priv->filename = strdup(filename)))
+    if (!(priv->filename = mp_get_user_path(NULL, stream->global, filename)))
         return NULL;
 
     priv->dvd_speed = priv->opts->speed;
     dvd_set_speed(stream, priv->filename, priv->dvd_speed);
 
     if (dvdnav_open(&(priv->dvdnav), priv->filename) != DVDNAV_STATUS_OK) {
-        free(priv->filename);
+        talloc_free(priv->filename);
         priv->filename = NULL;
         return NULL;
     }
@@ -638,7 +659,13 @@ static int open_s(stream_t *stream)
 
     priv->track = TITLE_LONGEST;
 
-    if (bstr_equals0(title, "longest") || bstr_equals0(title, "first")) {
+    struct MPOpts *opts = mp_get_config_group(stream, stream->global, &mp_opt_root);
+    int edition_id = opts->edition_id;
+    talloc_free(opts);
+
+    if (edition_id >= 0) {
+        priv->track = edition_id;
+    } else if (bstr_equals0(title, "longest") || bstr_equals0(title, "first")) {
         priv->track = TITLE_LONGEST;
     } else if (bstr_equals0(title, "menu")) {
         priv->track = TITLE_MENU;

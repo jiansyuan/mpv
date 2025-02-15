@@ -24,6 +24,7 @@
 #include "libmpv/client.h"
 
 #include "audio/aframe.h"
+#include "clipboard/clipboard.h"
 #include "common/common.h"
 #include "filters/f_output_chain.h"
 #include "filters/filter.h"
@@ -68,7 +69,7 @@ enum seek_type {
     MPSEEK_RELATIVE,
     MPSEEK_ABSOLUTE,
     MPSEEK_FACTOR,
-    MPSEEK_BACKSTEP,
+    MPSEEK_FRAMESTEP,
     MPSEEK_CHAPTER,
 };
 
@@ -140,6 +141,9 @@ struct track {
 
     // Current subtitle state (or cached state if selected==false).
     struct dec_sub *d_sub;
+
+    /* Heuristic for potentially redrawing subs. */
+    bool redraw_subs;
 
     // Current decoding state (NULL if selected==false)
     struct mp_decoder_wrapper *dec;
@@ -255,7 +259,7 @@ typedef struct MPContext {
     struct osd_state *osd;
     char *term_osd_text;
     char *term_osd_status;
-    char *term_osd_subs;
+    char *term_osd_subs[2];
     char *term_osd_contents;
     char *term_osd_title;
     char *last_window_title;
@@ -282,6 +286,8 @@ typedef struct MPContext {
     enum stop_play_reason stop_play;
     bool playback_initialized; // playloop can be run/is running
     int error_playing;
+
+    struct clipboard_ctx *clipboard;
 
     // Return code to use with PT_QUIT
     int quit_custom_rc;
@@ -408,9 +414,6 @@ typedef struct MPContext {
     int last_chapter_seek;
     bool last_chapter_flag;
 
-    /* Heuristic for potentially redrawing subs. */
-    bool redraw_subs;
-
     bool paused;            // internal pause state
     bool playback_active;   // not paused, restarting, loading, unloading
     bool in_playloop;
@@ -460,6 +463,7 @@ typedef struct MPContext {
     char *open_format;
     int open_url_flags;
     bool open_for_prefetch;
+    bool demuxer_changed;
     // --- All fields below are owned by open_thread, unless open_done was set
     //     to true.
     struct demuxer *open_res_demuxer;
@@ -480,6 +484,11 @@ struct mp_abort_entry {
     uint64_t client_work_id;    // client API user reply_userdata value
                                 // (only valid if client_work_type set)
 };
+
+// U+25CB WHITE CIRCLE
+// U+25CF BLACK CIRCLE
+#define WHITE_CIRCLE "\xe2\x97\x8b"
+#define BLACK_CIRCLE "\xe2\x97\x8f"
 
 // audio.c
 void reset_audio_state(struct MPContext *mpctx);
@@ -502,6 +511,7 @@ void audio_start_ao(struct MPContext *mpctx);
 void mp_parse_cfgfiles(struct MPContext *mpctx);
 void mp_load_auto_profiles(struct MPContext *mpctx);
 bool mp_load_playback_resume(struct MPContext *mpctx, const char *file);
+char *mp_get_playback_resume_dir(struct MPContext *mpctx);
 void mp_write_watch_later_conf(struct MPContext *mpctx);
 void mp_delete_watch_later_conf(struct MPContext *mpctx, const char *file);
 struct playlist_entry *mp_check_playlist_resume(struct MPContext *mpctx,
@@ -531,7 +541,7 @@ struct track *mp_track_by_tid(struct MPContext *mpctx, enum stream_type type,
 void add_demuxer_tracks(struct MPContext *mpctx, struct demuxer *demuxer);
 bool mp_remove_track(struct MPContext *mpctx, struct track *track);
 struct playlist_entry *mp_next_file(struct MPContext *mpctx, int direction,
-                                    bool force);
+                                    bool force, bool update_loop);
 void mp_set_playlist_entry(struct MPContext *mpctx, struct playlist_entry *e);
 void mp_play_files(struct MPContext *mpctx);
 void update_demuxer_properties(struct MPContext *mpctx);
@@ -566,6 +576,8 @@ void error_on_track(struct MPContext *mpctx, struct track *track);
 int stream_dump(struct MPContext *mpctx, const char *source_filename);
 double get_track_seek_offset(struct MPContext *mpctx, struct track *track);
 bool str_in_list(bstr str, char **list);
+char *mp_format_track_metadata(void *ctx, struct track *t, bool add_lang);
+const char *mp_find_non_filename_media_title(MPContext *mpctx);
 
 // osd.c
 void set_osd_bar(struct MPContext *mpctx, int type,
@@ -573,7 +585,8 @@ void set_osd_bar(struct MPContext *mpctx, int type,
 bool set_osd_msg(struct MPContext *mpctx, int level, int time,
                  const char* fmt, ...) PRINTF_ATTRIBUTE(4,5);
 void set_osd_function(struct MPContext *mpctx, int osd_function);
-void term_osd_set_subs(struct MPContext *mpctx, const char *text);
+void term_osd_clear_subs(struct MPContext *mpctx);
+void term_osd_set_subs(struct MPContext *mpctx, const char *text, int order);
 void get_current_osd_sym(struct MPContext *mpctx, char *buf, size_t buf_size);
 void set_osd_bar_chapters(struct MPContext *mpctx, int type);
 
@@ -589,7 +602,7 @@ void reset_playback_state(struct MPContext *mpctx);
 void set_pause_state(struct MPContext *mpctx, bool user_pause);
 void update_internal_pause_state(struct MPContext *mpctx);
 void update_core_idle_state(struct MPContext *mpctx);
-void add_step_frame(struct MPContext *mpctx, int dir);
+void add_step_frame(struct MPContext *mpctx, int dir, bool use_seek);
 void queue_seek(struct MPContext *mpctx, enum seek_type type, double amount,
                 enum seek_precision exact, int flags);
 double get_time_length(struct MPContext *mpctx);

@@ -61,7 +61,7 @@ static void playlist_update_indexes(struct playlist *pl, int start, int end)
 }
 
 // Inserts the entry so that it takes "at"'s place, shifting "at" and all
-// further entires to the right (or append to end, if at==NULL).
+// further entries to the right (or append to end, if at==NULL).
 void playlist_insert_at(struct playlist *pl, struct playlist_entry *add,
                         struct playlist_entry *at)
 {
@@ -159,9 +159,10 @@ void playlist_append_file(struct playlist *pl, const char *filename)
 
 void playlist_populate_playlist_path(struct playlist *pl, const char *path)
 {
+    char *playlist_path = talloc_strdup(pl, path);
     for (int n = 0; n < pl->num_entries; n++) {
         struct playlist_entry *e = pl->entries[n];
-        e->playlist_path = talloc_strdup(e, path);
+        e->playlist_path = playlist_path;
     }
 }
 
@@ -338,6 +339,7 @@ int64_t playlist_transfer_entries_to(struct playlist *pl, int dst_index,
         e->id = ++pl->id_alloc;
         pl->entries[e->pl_index] = e;
         talloc_steal(pl, e);
+        talloc_steal(pl, e->playlist_path);
     }
 
     playlist_update_indexes(pl, dst_index + count, -1);
@@ -401,17 +403,16 @@ struct playlist *playlist_parse_file(const char *file, struct mp_cancel *cancel,
     struct mp_log *log = mp_log_new(NULL, global->log, "!playlist_parser");
     mp_verbose(log, "Parsing playlist file %s...\n", file);
 
+    char *path = mp_get_user_path(NULL, global, file);
     struct demuxer_params p = {
         .force_format = "playlist",
         .stream_flags = STREAM_ORIGIN_DIRECT,
     };
-    struct demuxer *d = demux_open_url(file, &p, cancel, global);
-    if (!d) {
-        talloc_free(log);
-        return NULL;
-    }
-
+    struct demuxer *d = demux_open_url(path, &p, cancel, global);
     struct playlist *ret = NULL;
+    if (!d)
+        goto done;
+
     if (d && d->playlist) {
         ret = talloc_zero(NULL, struct playlist);
         playlist_populate_playlist_path(d->playlist, file);
@@ -432,7 +433,9 @@ struct playlist *playlist_parse_file(const char *file, struct mp_cancel *cancel,
     if (ret && !ret->num_entries)
         mp_warn(log, "Warning: empty playlist\n");
 
+done:
     talloc_free(log);
+    talloc_free(path);
     return ret;
 }
 
